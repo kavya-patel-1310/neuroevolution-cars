@@ -1,0 +1,1471 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neuroevolution Cars: self-driving cars that teach themselves</title>
+  <meta name="description" content="Self-driving cars that learn to race with a neural network and a genetic algorithm, written from scratch in JavaScript." />
+  <style>
+:root {
+  --bg: #0a0b0e;
+  --panel: #0f1115;
+  --border: #20232a;
+  --text: #c5cad3;
+  --muted: #7d838e;
+  --bright: #eef0f3;
+  --green: #3ddc97;
+  --amber: #f5b942;
+  --blue: #6c8cff;
+  --red: #ff5d6c;
+  --mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 12px/1.45 var(--mono); }
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.brand { color: var(--bright); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+.meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px;
+  height: calc(100% - 41px);
+}
+.stage { position: relative; display: flex; flex-direction: column; min-height: 0; }
+#world { flex: 1; width: 100%; min-height: 0; display: block; }
+
+.badge {
+  position: absolute; top: 12px; left: 12px; padding: 4px 10px; border-radius: 4px;
+  background: rgba(245, 185, 66, 0.12); color: var(--amber); border: 1px solid rgba(245, 185, 66, 0.35);
+  letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px;
+}
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 10px 12px; border-top: 1px solid var(--border);
+}
+.sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+button {
+  font: inherit; color: var(--text); background: #151820; border: 1px solid var(--border);
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: #3a3f4a; color: var(--bright); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.active { border-color: var(--amber); color: var(--amber); }
+button.danger:hover { border-color: var(--red); color: var(--red); }
+
+.side { border-left: 1px solid var(--border); overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.panel { border: 1px solid var(--border); background: var(--panel); border-radius: 4px; padding: 10px 12px; }
+.label { color: var(--muted); margin-bottom: 6px; }
+.stats h2 { margin: 0 0 8px; color: var(--bright); font-size: 18px; font-weight: 600; }
+.stats dl { display: grid; grid-template-columns: 90px 1fr; margin: 0; row-gap: 2px; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; color: var(--text); }
+
+canvas.net { width: 100%; height: 190px; display: block; }
+canvas.chart { width: 100%; height: 120px; display: block; }
+.legend { display: flex; gap: 12px; color: var(--muted); font-size: 10px; margin-top: 4px; }
+.legend .pos { color: var(--green); }
+.legend .neg { color: var(--red); }
+.legend .act { color: var(--amber); }
+
+.controls label { display: block; margin: 8px 0; color: var(--muted); }
+.controls output { float: right; color: var(--bright); }
+.controls input[type="range"] { width: 100%; accent-color: var(--green); margin-top: 4px; }
+.controls .row { display: flex; justify-content: space-between; align-items: center; }
+.controls input[type="number"] {
+  width: 90px; font: inherit; background: #151820; color: var(--bright);
+  border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;
+}
+.controls .check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); }
+.controls .check input { accent-color: var(--green); margin-top: 2px; }
+.hint { color: var(--muted); font-size: 10.5px; margin: 10px 0 0; }
+kbd { border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; color: var(--text); font: inherit; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  #world { height: 60vh; flex: none; }
+  .side { border-left: none; border-top: 1px solid var(--border); }
+  .meta { display: none; }
+}
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>neuroevolution_cars.js</div>
+    <div class="meta" id="meta">160 cars · 7 sensors → 8-8-2 net · genetic algorithm</div>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <canvas id="world" aria-label="Race track simulation"></canvas>
+      <div class="badge" id="badge" hidden></div>
+      <div class="toolbar">
+        <button id="btnPause" title="Space">Pause</button>
+        <button id="btnTurbo" title="T">Fast-forward gen</button>
+        <button id="btnTrack" title="N">New track</button>
+        <button id="btnDemo" title="C" disabled>Watch champion</button>
+        <span class="sep"></span>
+        <button id="btnPretrained" title="Load the champion trained by scripts/train.js">Load pretrained</button>
+        <button id="btnSave" disabled>Save brain</button>
+        <button id="btnLoad">Load brain</button>
+        <input type="file" id="fileLoad" accept=".json,application/json" hidden />
+        <span class="sep"></span>
+        <button id="btnReset" class="danger" title="R">Reset</button>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel stats">
+        <h2 id="genTitle">generation 1</h2>
+        <dl>
+          <dt>alive</dt><dd id="stAlive">–</dd>
+          <dt>leader</dt><dd id="stLeader">–</dd>
+          <dt>best ever</dt><dd id="stBest">–</dd>
+          <dt>laps</dt><dd id="stLaps">–</dd>
+          <dt>step</dt><dd id="stStep">–</dd>
+          <dt>track</dt><dd id="stTrack">–</dd>
+        </dl>
+      </div>
+
+      <div class="panel">
+        <div class="label">leader's network (live)</div>
+        <canvas id="net" class="net"></canvas>
+        <div class="legend"><span class="pos">■ +weight</span><span class="neg">■ −weight</span><span class="act">● activation</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="label">best car per generation</div>
+        <canvas id="chart" class="chart"></canvas>
+      </div>
+
+      <div class="panel controls">
+        <div class="label">hyperparameters</div>
+        <label>sim speed <output id="oSpeed">2×</output>
+          <input type="range" id="speed" min="1" max="30" value="2" /></label>
+        <label>mutation rate <output id="oMutRate">0.10</output>
+          <input type="range" id="mutRate" min="0" max="0.5" step="0.01" value="0.10" /></label>
+        <label>mutation strength <output id="oMutStr">0.35</output>
+          <input type="range" id="mutStr" min="0.02" max="1" step="0.01" value="0.35" /></label>
+        <label>population* <output id="oPop">160</output>
+          <input type="range" id="pop" min="20" max="400" step="10" value="160" /></label>
+        <label>hidden neurons* <output id="oHidden">8</output>
+          <input type="range" id="hidden" min="2" max="16" value="8" /></label>
+        <label class="row">seed* <input type="number" id="seed" value="42" min="0" /></label>
+        <label class="check"><input type="checkbox" id="randTrack" /> new random track every generation (generalisation)</label>
+        <label class="check"><input type="checkbox" id="allSensors" /> show sensors for all cars</label>
+        <label class="check"><input type="checkbox" id="showDead" checked /> show crashed cars</label>
+        <p class="hint">* applied on Reset. Keys: <kbd>Space</kbd> pause · <kbd>T</kbd> fast-forward · <kbd>N</kbd> new track · <kbd>C</kbd> champion · <kbd>R</kbd> reset</p>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+/**
+ * Seeded pseudo-random number generator (mulberry32) + Gaussian sampling.
+ * Every random decision in the project goes through this, so any training
+ * run can be reproduced exactly from its seed.
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  class RNG {
+    constructor(seed = Date.now()) {
+      this.seed = seed >>> 0;
+      this._next = mulberry32(this.seed);
+      this._spare = null;
+    }
+    random() {
+      return this._next();
+    }
+    range(min, max) {
+      return min + (max - min) * this._next();
+    }
+    int(n) {
+      return Math.floor(this._next() * n);
+    }
+    /** Standard normal sample (Marsaglia polar method). */
+    gaussian() {
+      if (this._spare !== null) {
+        const s = this._spare;
+        this._spare = null;
+        return s;
+      }
+      let u, v, s;
+      do {
+        u = this._next() * 2 - 1;
+        v = this._next() * 2 - 1;
+        s = u * u + v * v;
+      } while (s >= 1 || s === 0);
+      const m = Math.sqrt((-2 * Math.log(s)) / s);
+      this._spare = v * m;
+      return u * m;
+    }
+  }
+
+  NE.RNG = RNG;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+/**
+ * Minimal feed-forward neural network, written from scratch (no libraries).
+ *
+ * All weights and biases live in ONE flat Float32Array (the "genome"), which
+ * is what the genetic algorithm mutates and recombines.
+ *
+ * Genome layout, per layer l (from layer l-1 with nIn neurons to layer l with nOut):
+ *   [ w(0,0) .. w(0,nIn-1), w(1,0) .. , w(nOut-1,nIn-1),  b(0) .. b(nOut-1) ]
+ *   where w(j,i) connects input i -> output j.
+ * Activation: tanh on every layer, so outputs are in [-1, 1].
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+
+  class NeuralNetwork {
+    constructor(layers, genome) {
+      if (!Array.isArray(layers) || layers.length < 2) {
+        throw new Error('NeuralNetwork needs at least an input and an output layer');
+      }
+      this.layers = layers.slice();
+      this.size = NeuralNetwork.genomeSize(layers);
+      if (genome && genome.length !== this.size) {
+        throw new Error(`Genome length ${genome.length} does not match topology ${layers.join('-')} (${this.size})`);
+      }
+      this.genome = genome ? Float32Array.from(genome) : new Float32Array(this.size);
+      this.activations = layers.map((n) => new Float32Array(n));
+      // Start offset of each layer's weight block, used by forward() and the visualiser.
+      this.offsets = [0];
+      for (let l = 1; l < layers.length; l++) {
+        this.offsets.push(this.offsets[l - 1] + layers[l - 1] * layers[l] + layers[l]);
+      }
+    }
+
+    static genomeSize(layers) {
+      let s = 0;
+      for (let l = 1; l < layers.length; l++) s += layers[l - 1] * layers[l] + layers[l];
+      return s;
+    }
+
+    /** Random network: weights ~ N(0, 1/fanIn) (Xavier-style), biases ~ N(0, 0.1). */
+    static random(layers, rng) {
+      const nn = new NeuralNetwork(layers);
+      const g = nn.genome;
+      for (let l = 1; l < layers.length; l++) {
+        const nIn = layers[l - 1];
+        const nOut = layers[l];
+        const off = nn.offsets[l - 1];
+        const scale = 1 / Math.sqrt(nIn);
+        for (let k = 0; k < nIn * nOut; k++) g[off + k] = rng.gaussian() * scale * 1.5;
+        for (let j = 0; j < nOut; j++) g[off + nIn * nOut + j] = rng.gaussian() * 0.1;
+      }
+      return nn;
+    }
+
+    forward(input) {
+      const a = this.activations;
+      const g = this.genome;
+      a[0].set(input);
+      for (let l = 1; l < a.length; l++) {
+        const prev = a[l - 1];
+        const cur = a[l];
+        const nIn = prev.length;
+        const nOut = cur.length;
+        const off = this.offsets[l - 1];
+        const bOff = off + nIn * nOut;
+        for (let j = 0; j < nOut; j++) {
+          let sum = g[bOff + j];
+          const row = off + j * nIn;
+          for (let i = 0; i < nIn; i++) sum += prev[i] * g[row + i];
+          cur[j] = Math.tanh(sum);
+        }
+      }
+      return a[a.length - 1];
+    }
+
+    /** Weight of the connection input i (layer l-1) -> neuron j (layer l). */
+    weight(l, i, j) {
+      return this.genome[this.offsets[l - 1] + j * this.layers[l - 1] + i];
+    }
+
+    toJSON() {
+      return { layers: this.layers, genome: Array.from(this.genome) };
+    }
+
+    static fromJSON(obj) {
+      return new NeuralNetwork(obj.layers, obj.genome);
+    }
+  }
+
+  NE.NeuralNetwork = NeuralNetwork;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+/**
+ * Procedurally generated closed race track.
+ *
+ * The centreline is an ellipse distorted by a sum of random sine harmonics,
+ * resampled to evenly spaced points. Left/right walls are offset along the
+ * normals, and every centreline point gets a "gate" (checkpoint) spanning the
+ * road. Generated tracks are validated (no folded walls, no parts of the road
+ * touching each other) and regenerated with gentler curves if invalid.
+ *
+ * Geometry queries (ray casts, collisions) only test wall segments near the
+ * car's current gate index, which keeps the simulation fast: O(window) instead
+ * of O(all walls) per query.
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+
+  /**
+   * Intersection of ray P + t*D with segment A-B.
+   * Returns t if it hits with 0 <= t < best, otherwise best.
+   * With an unnormalised D and best = 1 this is a segment-segment test.
+   */
+  function raySeg(px, py, dx, dy, ax, ay, bx, by, best) {
+    const ex = bx - ax;
+    const ey = by - ay;
+    const den = dx * ey - dy * ex;
+    if (den > -1e-12 && den < 1e-12) return best;
+    const wx = ax - px;
+    const wy = ay - py;
+    const t = (wx * ey - wy * ex) / den;
+    if (t < 0 || t >= best) return best;
+    const u = (wx * dy - wy * dx) / den;
+    if (u < 0 || u > 1) return best;
+    return t;
+  }
+
+  class Track {
+    constructor(opts = {}) {
+      this.seed = opts.seed ?? 1;
+      this.width = opts.width ?? 1000;
+      this.height = opts.height ?? 640;
+      this.n = opts.segments ?? 220;
+      this.trackWidth = opts.trackWidth ?? 58;
+      this.sensorRange = opts.sensorRange ?? 180;
+      this._build();
+    }
+
+    _centerline(harmonics, sumAmp) {
+      const W = this.width;
+      const H = this.height;
+      const margin = this.trackWidth / 2 + 18;
+      const Rx = (W / 2 - margin) / (1 + sumAmp);
+      const Ry = (H / 2 - margin) / (1 + sumAmp);
+      // Dense sampling, then resample to n points evenly spaced by arc length.
+      const M = this.n * 8;
+      const xs = new Float64Array(M + 1);
+      const ys = new Float64Array(M + 1);
+      const cum = new Float64Array(M + 1);
+      for (let i = 0; i <= M; i++) {
+        const th = (2 * Math.PI * i) / M;
+        let r = 1;
+        for (const h of harmonics) r += h.a * Math.sin(h.k * th + h.p);
+        xs[i] = W / 2 + Rx * r * Math.cos(th);
+        ys[i] = H / 2 + Ry * r * Math.sin(th);
+        if (i > 0) cum[i] = cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+      }
+      const total = cum[M];
+      const cx = new Float64Array(this.n);
+      const cy = new Float64Array(this.n);
+      let j = 0;
+      for (let i = 0; i < this.n; i++) {
+        const target = (total * i) / this.n;
+        while (cum[j + 1] < target) j++;
+        const f = (target - cum[j]) / (cum[j + 1] - cum[j] || 1);
+        cx[i] = xs[j] + (xs[j + 1] - xs[j]) * f;
+        cy[i] = ys[j] + (ys[j + 1] - ys[j]) * f;
+      }
+      return { cx, cy, length: total };
+    }
+
+    _build() {
+      const rng = new NE.RNG(this.seed * 2654435761);
+      let ampScale = 1;
+      for (let attempt = 0; attempt < 80; attempt++) {
+        const harmonics = [];
+        let sumAmp = 0;
+        for (let k = 2; k <= 5; k++) {
+          const a = rng.range(0.3, 1) * (0.55 / k) * ampScale;
+          harmonics.push({ k, a, p: rng.range(0, Math.PI * 2) });
+          sumAmp += a;
+        }
+        const { cx, cy, length } = this._centerline(harmonics, sumAmp);
+        this._assign(cx, cy, length);
+        if (this._isValid()) return;
+        ampScale *= 0.92;
+      }
+      // Falls through with the last (very gentle, near-elliptical) attempt.
+    }
+
+    _assign(cx, cy, length) {
+      const n = this.n;
+      const hw = this.trackWidth / 2;
+      this.cx = cx;
+      this.cy = cy;
+      this.lx = new Float64Array(n);
+      this.ly = new Float64Array(n);
+      this.rx = new Float64Array(n);
+      this.ry = new Float64Array(n);
+      this.tx = new Float64Array(n);
+      this.ty = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        const a = (i - 1 + n) % n;
+        const b = (i + 1) % n;
+        let tx = cx[b] - cx[a];
+        let ty = cy[b] - cy[a];
+        const len = Math.hypot(tx, ty) || 1;
+        tx /= len;
+        ty /= len;
+        this.tx[i] = tx;
+        this.ty[i] = ty;
+        // Normal (-ty, tx)
+        this.lx[i] = cx[i] - ty * hw;
+        this.ly[i] = cy[i] + tx * hw;
+        this.rx[i] = cx[i] + ty * hw;
+        this.ry[i] = cy[i] - tx * hw;
+      }
+      this.length = length;
+      this.segLen = length / n;
+      // Rays on the inside of a bend cover more wall indices than their length suggests, hence the 2x.
+      this.rayWindow = Math.ceil((2 * this.sensorRange) / this.segLen) + 4;
+      this.collisionWindow = 6;
+      this.start = { x: cx[0], y: cy[0], angle: Math.atan2(this.ty[0], this.tx[0]) };
+    }
+
+    _polyHits(ax, ay, bx, by, self) {
+      const n = this.n;
+      for (let i = 0; i < n; i++) {
+        const i2 = (i + 1) % n;
+        for (let j = self ? i + 2 : 0; j < n; j++) {
+          if (self && i === 0 && j === n - 1) continue; // closing neighbours
+          const j2 = (j + 1) % n;
+          if (raySeg(ax[i], ay[i], ax[i2] - ax[i], ay[i2] - ay[i], bx[j], by[j], bx[j2], by[j2], 1) < 1) return true;
+        }
+      }
+      return false;
+    }
+
+    _isValid() {
+      if (this._polyHits(this.lx, this.ly, this.lx, this.ly, true)) return false;
+      if (this._polyHits(this.rx, this.ry, this.rx, this.ry, true)) return false;
+      if (this._polyHits(this.lx, this.ly, this.rx, this.ry, false)) return false;
+      // Keep separate parts of the road visibly apart.
+      const n = this.n;
+      const minGap = this.trackWidth * 1.6;
+      const skip = Math.ceil((this.trackWidth * 2.5) / this.segLen);
+      for (let i = 0; i < n; i++) {
+        for (let j = i + skip; j < n; j++) {
+          if (n - (j - i) < skip) continue;
+          if (Math.hypot(this.cx[i] - this.cx[j], this.cy[i] - this.cy[j]) < minGap) return false;
+        }
+      }
+      return true;
+    }
+
+    /** Distance along unit direction (dx,dy) to the nearest wall, capped at range. */
+    castRay(x, y, dx, dy, range, idx, win = this.rayWindow) {
+      const n = this.n;
+      let best = range;
+      for (let o = -win; o <= win; o++) {
+        const k = (((idx + o) % n) + n) % n;
+        const k2 = k + 1 === n ? 0 : k + 1;
+        best = raySeg(x, y, dx, dy, this.lx[k], this.ly[k], this.lx[k2], this.ly[k2], best);
+        best = raySeg(x, y, dx, dy, this.rx[k], this.ry[k], this.rx[k2], this.ry[k2], best);
+      }
+      return best;
+    }
+
+    /** Does segment (ax,ay)-(bx,by) cross any wall near index idx? */
+    segmentHitsWall(ax, ay, bx, by, idx, win = this.collisionWindow) {
+      const n = this.n;
+      const dx = bx - ax;
+      const dy = by - ay;
+      for (let o = -win; o <= win; o++) {
+        const k = (((idx + o) % n) + n) % n;
+        const k2 = k + 1 === n ? 0 : k + 1;
+        if (raySeg(ax, ay, dx, dy, this.lx[k], this.ly[k], this.lx[k2], this.ly[k2], 1) < 1) return true;
+        if (raySeg(ax, ay, dx, dy, this.rx[k], this.ry[k], this.rx[k2], this.ry[k2], 1) < 1) return true;
+      }
+      return false;
+    }
+
+    /** Did the movement (px,py)->(x,y) pass through gate g? */
+    crossesGate(g, px, py, x, y) {
+      return raySeg(px, py, x - px, y - py, this.lx[g], this.ly[g], this.rx[g], this.ry[g], 1) < 1;
+    }
+  }
+
+  Track.raySeg = raySeg;
+  NE.Track = Track;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+/**
+ * A car driven by a neural network.
+ *
+ * Inputs (8):  7 ray-cast distance sensors (1 = wall touching, 0 = nothing in range)
+ *              + current speed (normalised).
+ * Outputs (2): steering in [-1, 1] and throttle/brake in [-1, 1].
+ *
+ * Fitness = checkpoints passed + fractional progress to the next one,
+ * plus a time bonus for cars that finish the target number of laps (rewards speed).
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+  const DEG = Math.PI / 180;
+
+  const CAR_DEFAULTS = {
+    maxSpeed: 6,
+    accel: 0.25,
+    friction: 0.02,
+    turnRate: 0.05,
+    length: 16,
+    width: 8,
+    sensorRange: 180,
+    sensorAngles: [-90, -55, -25, 0, 25, 55, 90].map((d) => d * DEG),
+    stallLimit: 100, // steps without reaching a new checkpoint before the car is removed
+    lapsToFinish: 3,
+    maxSteps: 2500,
+  };
+
+  class Car {
+    constructor(brain, track, cfg = {}) {
+      this.cfg = { ...CAR_DEFAULTS, ...cfg };
+      this.brain = brain;
+      this.track = track;
+      const ns = this.cfg.sensorAngles.length;
+      this.readings = new Float32Array(ns);
+      this.input = new Float32Array(ns + 1);
+      this.reset();
+    }
+
+    reset() {
+      const s = this.track.start;
+      this.x = s.x;
+      this.y = s.y;
+      this.angle = s.angle;
+      this.speed = 0;
+      this.alive = true;
+      this.finished = false;
+      this.crashed = false;
+      this.checkpoints = 0;
+      this.nextGate = 1;
+      this.steps = 0;
+      this.sinceProgress = 0;
+      this.fitness = 0;
+      this.steer = 0;
+      this.throttle = 0;
+      this.readings.fill(0);
+    }
+
+    get laps() {
+      return Math.floor(this.checkpoints / this.track.n);
+    }
+
+    get gateIndex() {
+      const n = this.track.n;
+      return (this.nextGate - 1 + n) % n;
+    }
+
+    sense() {
+      const c = this.cfg;
+      const idx = this.gateIndex;
+      for (let i = 0; i < c.sensorAngles.length; i++) {
+        const a = this.angle + c.sensorAngles[i];
+        const d = this.track.castRay(this.x, this.y, Math.cos(a), Math.sin(a), c.sensorRange, idx);
+        this.readings[i] = 1 - d / c.sensorRange;
+      }
+    }
+
+    corners() {
+      const hl = this.cfg.length / 2;
+      const hw = this.cfg.width / 2;
+      const c = Math.cos(this.angle);
+      const s = Math.sin(this.angle);
+      const pts = [];
+      for (const [lx, ly] of [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]]) {
+        pts.push(this.x + lx * c - ly * s, this.y + lx * s + ly * c);
+      }
+      return pts;
+    }
+
+    hitsWall() {
+      const p = this.corners();
+      const idx = this.gateIndex;
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        if (this.track.segmentHitsWall(p[i * 2], p[i * 2 + 1], p[j * 2], p[j * 2 + 1], idx)) return true;
+      }
+      return false;
+    }
+
+    update() {
+      if (!this.alive) return;
+      const c = this.cfg;
+      const t = this.track;
+
+      // 1. Perceive
+      this.sense();
+      this.input.set(this.readings);
+      this.input[this.readings.length] = this.speed / c.maxSpeed;
+
+      // 2. Think
+      const out = this.brain.forward(this.input);
+      this.steer = out[0];
+      this.throttle = out[1];
+
+      // 3. Act (simple kinematic model)
+      this.speed += this.throttle * c.accel;
+      this.speed *= 1 - c.friction;
+      if (this.speed > c.maxSpeed) this.speed = c.maxSpeed;
+      if (this.speed < 0) this.speed = 0;
+      this.angle += this.steer * c.turnRate * Math.min(1, this.speed / 2);
+      const px = this.x;
+      const py = this.y;
+      this.x += Math.cos(this.angle) * this.speed;
+      this.y += Math.sin(this.angle) * this.speed;
+      this.steps++;
+      this.sinceProgress++;
+
+      // 4. Score progress
+      for (let k = 0; k < 3; k++) {
+        if (!t.crossesGate(this.nextGate, px, py, this.x, this.y)) break;
+        this.checkpoints++;
+        this.nextGate = (this.nextGate + 1) % t.n;
+        this.sinceProgress = 0;
+      }
+
+      // 5. Termination
+      if (this.hitsWall()) {
+        this.alive = false;
+        this.crashed = true;
+      } else if (this.sinceProgress > c.stallLimit) {
+        this.alive = false;
+      } else if (c.lapsToFinish > 0 && this.checkpoints >= c.lapsToFinish * t.n) {
+        this.alive = false;
+        this.finished = true;
+      }
+      this.fitness = this.computeFitness();
+    }
+
+    computeFitness() {
+      const t = this.track;
+      const g = this.nextGate;
+      const d = Math.hypot(this.x - t.cx[g], this.y - t.cy[g]);
+      const frac = Math.max(0, Math.min(1, 1 - d / t.segLen));
+      let f = this.checkpoints + frac;
+      if (this.finished) f += (1 - this.steps / this.cfg.maxSteps) * t.n * 0.5;
+      return f;
+    }
+  }
+
+  NE.CAR_DEFAULTS = CAR_DEFAULTS;
+  NE.Car = Car;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+/**
+ * Genetic algorithm over flat weight vectors (neuroevolution).
+ *
+ *  - Elitism:      the top `eliteCount` genomes survive unchanged.
+ *  - Selection:    tournament selection (pick k at random, keep the fittest).
+ *  - Crossover:    uniform crossover with probability `crossoverRate`.
+ *  - Mutation:     each gene mutates with probability `mutationRate`:
+ *                  usually a Gaussian nudge (sigma = `mutationStrength`),
+ *                  occasionally a full reset to catch up on lost diversity.
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+
+  const GA_DEFAULTS = {
+    eliteCount: 4,
+    tournamentSize: 4,
+    crossoverRate: 0.5,
+    mutationRate: 0.1,
+    mutationStrength: 0.35,
+    resetChance: 0.05,
+  };
+
+  class GeneticAlgorithm {
+    constructor(cfg = {}, rng) {
+      this.cfg = { ...GA_DEFAULTS, ...cfg };
+      this.rng = rng || new NE.RNG(1);
+    }
+
+    rank(fitness) {
+      return fitness.map((_, i) => i).sort((a, b) => fitness[b] - fitness[a]);
+    }
+
+    tournament(fitness) {
+      let best = -1;
+      for (let k = 0; k < this.cfg.tournamentSize; k++) {
+        const i = this.rng.int(fitness.length);
+        if (best < 0 || fitness[i] > fitness[best]) best = i;
+      }
+      return best;
+    }
+
+    crossover(a, b) {
+      const c = new Float32Array(a.length);
+      for (let i = 0; i < a.length; i++) c[i] = this.rng.random() < 0.5 ? a[i] : b[i];
+      return c;
+    }
+
+    mutate(g) {
+      const { mutationRate, mutationStrength, resetChance } = this.cfg;
+      for (let i = 0; i < g.length; i++) {
+        if (this.rng.random() < mutationRate) {
+          if (this.rng.random() < resetChance) g[i] = this.rng.gaussian();
+          else g[i] += this.rng.gaussian() * mutationStrength;
+        }
+      }
+      return g;
+    }
+
+    /** Produce the next generation from current genomes and their fitness scores. */
+    evolve(genomes, fitness, size = genomes.length) {
+      const order = this.rank(fitness);
+      const next = [];
+      const elites = Math.min(this.cfg.eliteCount, size, genomes.length);
+      for (let i = 0; i < elites; i++) next.push(Float32Array.from(genomes[order[i]]));
+      while (next.length < size) {
+        const p1 = genomes[this.tournament(fitness)];
+        const child =
+          this.rng.random() < this.cfg.crossoverRate
+            ? this.crossover(p1, genomes[this.tournament(fitness)])
+            : Float32Array.from(p1);
+        next.push(this.mutate(child));
+      }
+      return next;
+    }
+  }
+
+  NE.GA_DEFAULTS = GA_DEFAULTS;
+  NE.GeneticAlgorithm = GeneticAlgorithm;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+/**
+ * Simulation: owns the track, the population of cars and the evolution loop.
+ * Rendering-free, so the same code runs in the browser and in Node (scripts/train.js).
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+
+  const SIM_DEFAULTS = {
+    seed: 42,
+    trackSeed: 7,
+    populationSize: 160,
+    hidden: [8],
+    maxSteps: 2500,
+    randomizeTrack: false,
+    car: {},
+    ga: {},
+  };
+
+  class Simulation {
+    constructor(cfg = {}) {
+      this.cfg = { ...SIM_DEFAULTS, ...cfg };
+      this.rng = new NE.RNG(this.cfg.seed);
+      this.carCfg = { ...NE.CAR_DEFAULTS, ...this.cfg.car, maxSteps: this.cfg.maxSteps };
+      this.layers = [this.carCfg.sensorAngles.length + 1, ...this.cfg.hidden, 2];
+      this.ga = new NE.GeneticAlgorithm(this.cfg.ga, this.rng);
+      this.track = this._makeTrack(this.cfg.trackSeed);
+      this.generation = 1;
+      this.history = [];
+      this.best = { fitness: -Infinity, genome: null, generation: 0, checkpoints: 0, laps: 0, trackSeed: null };
+      this.demo = false;
+      this.totalSteps = 0;
+      this.genomes = Array.from({ length: this.cfg.populationSize }, () =>
+        NE.NeuralNetwork.random(this.layers, this.rng).genome
+      );
+      this._spawn();
+    }
+
+    _makeTrack(seed) {
+      return new NE.Track({ seed, sensorRange: this.carCfg.sensorRange });
+    }
+
+    _spawn() {
+      this.cars = this.genomes.map(
+        (g) => new NE.Car(new NE.NeuralNetwork(this.layers, g), this.track, this.carCfg)
+      );
+      this.stepCount = 0;
+    }
+
+    /** Advance one tick. Returns true when a generation just ended. */
+    step() {
+      if (this.demo) return this._stepDemo();
+      let alive = 0;
+      for (const c of this.cars) {
+        c.update();
+        if (c.alive) alive++;
+      }
+      this.stepCount++;
+      this.totalSteps++;
+      if (alive === 0 || this.stepCount >= this.cfg.maxSteps) {
+        this._endGeneration();
+        return true;
+      }
+      return false;
+    }
+
+    /** Run headless until the current generation ends. */
+    runGeneration() {
+      while (!this.step()) {}
+      return this.history[this.history.length - 1];
+    }
+
+    _endGeneration() {
+      const f = this.cars.map((c) => c.fitness);
+      let bi = 0;
+      for (let i = 1; i < f.length; i++) if (f[i] > f[bi]) bi = i;
+      const bc = this.cars[bi];
+      const avg = f.reduce((a, b) => a + b, 0) / f.length;
+      const rec = {
+        generation: this.generation,
+        best: f[bi],
+        avg,
+        checkpoints: bc.checkpoints,
+        laps: bc.laps,
+        finished: this.cars.filter((c) => c.finished).length,
+        crashed: this.cars.filter((c) => c.crashed).length,
+        steps: this.stepCount,
+        trackSeed: this.track.seed,
+      };
+      this.history.push(rec);
+      if (f[bi] > this.best.fitness) {
+        this.best = {
+          fitness: f[bi],
+          genome: Float32Array.from(bc.brain.genome),
+          generation: this.generation,
+          checkpoints: bc.checkpoints,
+          laps: bc.laps,
+          trackSeed: this.track.seed,
+        };
+        if (this.onNewBest) this.onNewBest(this.best);
+      }
+      this.genomes = this.ga.evolve(this.genomes, f, this.cfg.populationSize);
+      if (this.cfg.randomizeTrack) this.track = this._makeTrack(1 + this.rng.int(1e9));
+      this.generation++;
+      this._spawn();
+      if (this.onGeneration) this.onGeneration(rec);
+    }
+
+    leader() {
+      let best = null;
+      for (const c of this.cars) if (c.alive && (!best || c.fitness > best.fitness)) best = c;
+      if (!best) for (const c of this.cars) if (!best || c.fitness > best.fitness) best = c;
+      return best;
+    }
+
+    aliveCount() {
+      let n = 0;
+      for (const c of this.cars) if (c.alive) n++;
+      return n;
+    }
+
+    /** Swap to a new track and restart the current generation on it (no evolution step). */
+    setTrack(seed) {
+      this.cfg.trackSeed = seed;
+      this.track = this._makeTrack(seed);
+      if (this.demo) this._spawnDemo();
+      else this._spawn();
+    }
+
+    restartGeneration() {
+      if (this.demo) this._spawnDemo();
+      else this._spawn();
+    }
+
+    // ---- Champion replay -------------------------------------------------
+    setDemo(on) {
+      if (on && !this.best.genome) return false;
+      this.demo = on;
+      if (on) this._spawnDemo();
+      else this._spawn();
+      return true;
+    }
+
+    _spawnDemo() {
+      const cfg = { ...this.carCfg, lapsToFinish: 0 };
+      this.cars = [new NE.Car(new NE.NeuralNetwork(this.layers, this.best.genome), this.track, cfg)];
+      this.stepCount = 0;
+    }
+
+    _stepDemo() {
+      const c = this.cars[0];
+      c.update();
+      this.stepCount++;
+      if (!c.alive || this.stepCount >= this.cfg.maxSteps * 2) {
+        c.reset();
+        this.stepCount = 0;
+      }
+      return false;
+    }
+
+    // ---- Persistence -----------------------------------------------------
+    exportBest() {
+      if (!this.best.genome) return null;
+      return {
+        format: 'neuroevolution-cars/brain',
+        version: 1,
+        layers: this.layers,
+        genome: Array.from(this.best.genome),
+        fitness: this.best.fitness,
+        generation: this.best.generation,
+        checkpoints: this.best.checkpoints,
+        laps: this.best.laps,
+        trackSeed: this.best.trackSeed,
+        savedAt: new Date().toISOString(),
+      };
+    }
+
+    /** Seed the population from a saved brain: one exact copy + mutated offspring. */
+    loadBrain(obj) {
+      if (!obj || !Array.isArray(obj.layers) || !obj.genome) throw new Error('Not a brain file');
+      if (obj.layers[0] !== this.layers[0] || obj.layers[obj.layers.length - 1] !== 2) {
+        throw new Error(`Brain topology ${obj.layers.join('-')} does not fit ${this.layers[0]} inputs / 2 outputs`);
+      }
+      const nn = NE.NeuralNetwork.fromJSON(obj);
+      this.layers = obj.layers.slice();
+      this.cfg.hidden = this.layers.slice(1, -1);
+      this.genomes = [Float32Array.from(nn.genome)];
+      while (this.genomes.length < this.cfg.populationSize) {
+        this.genomes.push(this.ga.mutate(Float32Array.from(nn.genome)));
+      }
+      this.best = {
+        fitness: obj.fitness ?? 0,
+        genome: Float32Array.from(nn.genome),
+        generation: obj.generation ?? 0,
+        checkpoints: obj.checkpoints ?? 0,
+        laps: obj.laps ?? 0,
+        trackSeed: obj.trackSeed ?? null,
+      };
+      this.demo = false;
+      this._spawn();
+    }
+  }
+
+  NE.SIM_DEFAULTS = SIM_DEFAULTS;
+  NE.Simulation = Simulation;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+/**
+ * Canvas rendering: the track + cars, the leader's live neural network, and the
+ * per-generation fitness chart. Pure drawing, no simulation logic.
+ */
+(function (root) {
+  const NE = (root.NE = root.NE || {});
+
+  const C = {
+    bg: '#0a0b0e',
+    road: '#16181e',
+    edge: 'rgba(196, 202, 212, 0.55)',
+    gate: 'rgba(255, 255, 255, 0.035)',
+    car: 'rgba(122, 146, 255, 0.85)',
+    dead: 'rgba(255, 93, 108, 0.32)',
+    leader: '#ffd166',
+    green: '#3ddc97',
+    red: '#ff5d6c',
+    amber: '#f5b942',
+    blue: '#6c8cff',
+    text: '#8b919c',
+    textBright: '#e6e9ee',
+  };
+  const INPUT_LABELS = ['L90', 'L55', 'L25', 'FWD', 'R25', 'R55', 'R90', 'SPD'];
+  const OUTPUT_LABELS = ['steer', 'gas'];
+
+  function fit(canvas) {
+    const dpr = root.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    const W = Math.max(1, Math.round(w * dpr));
+    const H = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== W || canvas.height !== H) {
+      canvas.width = W;
+      canvas.height = H;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w, h };
+  }
+
+  function pathLoop(ctx, xs, ys) {
+    ctx.beginPath();
+    ctx.moveTo(xs[0], ys[0]);
+    for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], ys[i]);
+    ctx.closePath();
+  }
+
+  class Renderer {
+    constructor(world, net, chart) {
+      this.world = world;
+      this.net = net;
+      this.chart = chart;
+    }
+
+    drawWorld(sim, opts = {}) {
+      const { ctx, w, h } = fit(this.world);
+      ctx.fillStyle = C.bg;
+      ctx.fillRect(0, 0, w, h);
+      const t = sim.track;
+      const s = Math.min(w / t.width, h / t.height) * 0.98;
+      ctx.save();
+      ctx.translate((w - t.width * s) / 2, (h - t.height * s) / 2);
+      ctx.scale(s, s);
+      this._drawTrack(ctx, t);
+
+      const leader = sim.leader();
+      if (opts.showDead) for (const c of sim.cars) if (!c.alive) this._drawCar(ctx, c, C.dead);
+      for (const c of sim.cars) {
+        if (!c.alive || c === leader) continue;
+        if (opts.showAllSensors) this._drawSensors(ctx, c, 0.12);
+        this._drawCar(ctx, c, C.car);
+      }
+      if (leader) {
+        if (opts.showSensors !== false) this._drawSensors(ctx, leader, 0.9);
+        ctx.shadowColor = C.leader;
+        ctx.shadowBlur = 12;
+        this._drawCar(ctx, leader, leader.alive ? C.leader : C.dead);
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+    }
+
+    _drawTrack(ctx, t) {
+      ctx.lineJoin = 'round';
+      pathLoop(ctx, t.cx, t.cy);
+      ctx.strokeStyle = C.road;
+      ctx.lineWidth = t.trackWidth;
+      ctx.stroke();
+
+      ctx.strokeStyle = C.gate;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < t.n; i += 4) {
+        ctx.moveTo(t.lx[i], t.ly[i]);
+        ctx.lineTo(t.rx[i], t.ry[i]);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = C.edge;
+      ctx.lineWidth = 1.2;
+      pathLoop(ctx, t.lx, t.ly);
+      ctx.stroke();
+      pathLoop(ctx, t.rx, t.ry);
+      ctx.stroke();
+
+      // Chequered start / finish line
+      const squares = 8;
+      const dx = (t.rx[0] - t.lx[0]) / squares;
+      const dy = (t.ry[0] - t.ly[0]) / squares;
+      const ux = t.tx[0] * 3;
+      const uy = t.ty[0] * 3;
+      for (let i = 0; i < squares; i++) {
+        for (let r = 0; r < 2; r++) {
+          ctx.fillStyle = (i + r) % 2 ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.6)';
+          const x = t.lx[0] + dx * i + ux * (r - 1);
+          const y = t.ly[0] + dy * i + uy * (r - 1);
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + dx, y + dy);
+          ctx.lineTo(x + dx + ux, y + dy + uy);
+          ctx.lineTo(x + ux, y + uy);
+          ctx.fill();
+        }
+      }
+    }
+
+    _drawCar(ctx, car, color) {
+      const L = car.cfg.length;
+      const W = car.cfg.width;
+      ctx.save();
+      ctx.translate(car.x, car.y);
+      ctx.rotate(car.angle);
+      ctx.fillStyle = color;
+      ctx.fillRect(-L / 2, -W / 2, L, W);
+      ctx.fillStyle = 'rgba(10,11,14,0.55)';
+      ctx.fillRect(L / 2 - 5, -W / 2 + 1.5, 2.5, W - 3); // windscreen
+      ctx.restore();
+    }
+
+    _drawSensors(ctx, car, alpha) {
+      const c = car.cfg;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < c.sensorAngles.length; i++) {
+        const r = car.readings[i];
+        const d = (1 - r) * c.sensorRange;
+        const a = car.angle + c.sensorAngles[i];
+        const x = car.x + Math.cos(a) * d;
+        const y = car.y + Math.sin(a) * d;
+        const hue = 140 - 140 * r; // green (far) -> red (close)
+        ctx.strokeStyle = `hsla(${hue}, 80%, 62%, ${alpha * 0.7})`;
+        ctx.beginPath();
+        ctx.moveTo(car.x, car.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        if (r > 0) {
+          ctx.fillStyle = `hsla(${hue}, 85%, 65%, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(x, y, 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    drawNetwork(nn) {
+      const { ctx, w, h } = fit(this.net);
+      ctx.clearRect(0, 0, w, h);
+      if (!nn) return;
+      const L = nn.layers;
+      const padX = 40;
+      const padY = 14;
+      const pos = L.map((n, l) => {
+        const x = padX + ((w - padX * 2) * l) / (L.length - 1);
+        const gap = (h - padY * 2) / Math.max(1, n);
+        return Array.from({ length: n }, (_, i) => [x, padY + gap * (i + 0.5)]);
+      });
+      for (let l = 1; l < L.length; l++) {
+        for (let j = 0; j < L[l]; j++) {
+          for (let i = 0; i < L[l - 1]; i++) {
+            const wt = nn.weight(l, i, j);
+            const signal = Math.abs(nn.activations[l - 1][i]);
+            const a = Math.min(1, Math.abs(wt) / 2) * (0.15 + 0.6 * signal);
+            ctx.strokeStyle = wt > 0 ? `rgba(61,220,151,${a})` : `rgba(255,93,108,${a})`;
+            ctx.lineWidth = 0.4 + Math.min(2, Math.abs(wt));
+            ctx.beginPath();
+            ctx.moveTo(pos[l - 1][i][0], pos[l - 1][i][1]);
+            ctx.lineTo(pos[l][j][0], pos[l][j][1]);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textBaseline = 'middle';
+      for (let l = 0; l < L.length; l++) {
+        for (let i = 0; i < L[l]; i++) {
+          const v = nn.activations[l][i];
+          const [x, y] = pos[l][i];
+          const r = Math.min(7, (h - padY * 2) / L[l] / 2.4);
+          ctx.fillStyle = '#0d0f13';
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+          const base = v >= 0 ? '245,185,66' : '108,140,255';
+          ctx.fillStyle = `rgba(${base},${0.15 + 0.85 * Math.abs(v)})`;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          if (l === 0) {
+            ctx.fillStyle = C.text;
+            ctx.textAlign = 'right';
+            ctx.fillText(INPUT_LABELS[i] ?? `in${i}`, x - r - 4, y);
+          } else if (l === L.length - 1) {
+            ctx.fillStyle = C.textBright;
+            ctx.textAlign = 'left';
+            ctx.fillText(OUTPUT_LABELS[i] ?? `out${i}`, x + r + 4, y - 6);
+            ctx.fillStyle = C.text;
+            ctx.fillText((v >= 0 ? '+' : '') + v.toFixed(2), x + r + 4, y + 6);
+          }
+        }
+      }
+    }
+
+    drawChart(history) {
+      const { ctx, w, h } = fit(this.chart);
+      ctx.clearRect(0, 0, w, h);
+      ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      if (!history.length) {
+        ctx.fillStyle = C.text;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('waiting for generation 1 to finish…', w / 2, h / 2);
+        return;
+      }
+      const data = history.slice(-36);
+      const max = Math.max(...data.map((d) => d.best), 1);
+      const padL = 4;
+      const padB = 16;
+      const padT = 14;
+      const bw = (w - padL * 2) / data.length;
+      const y = (v) => h - padB - (v / max) * (h - padB - padT);
+      data.forEach((d, i) => {
+        const x = padL + i * bw;
+        ctx.fillStyle = d.laps > 0 ? C.green : 'rgba(61,220,151,0.45)';
+        ctx.fillRect(x + bw * 0.12, y(d.best), bw * 0.76, h - padB - y(d.best));
+      });
+      ctx.strokeStyle = C.amber;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      data.forEach((d, i) => {
+        const x = padL + i * bw + bw / 2;
+        if (i) ctx.lineTo(x, y(d.avg));
+        else ctx.moveTo(x, y(d.avg));
+      });
+      ctx.stroke();
+      ctx.fillStyle = C.text;
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'left';
+      ctx.fillText(`gen ${data[0].generation}`, padL, h - 3);
+      ctx.textAlign = 'right';
+      ctx.fillText(`gen ${data[data.length - 1].generation}`, w - padL, h - 3);
+      ctx.fillText(`max ${max.toFixed(0)}`, w - padL, 10);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = C.green;
+      ctx.fillText('■ best', padL, 10);
+      ctx.fillStyle = C.amber;
+      ctx.fillText('— avg', padL + 50, 10);
+    }
+  }
+
+  NE.Renderer = Renderer;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+  <script>
+window.NE_PRETRAINED = {"format":"neuroevolution-cars/brain","version":1,"layers":[8,8,2],"genome":[0.8693440556526184,0.9296402335166931,-0.9307593107223511,-0.16748788952827454,-2.4390032291412354,0.5083783864974976,0.9356617331504822,-0.08085249364376068,-0.8804163336753845,0.503298282623291,-0.5404893159866333,-0.4736151695251465,-0.1762375384569168,-1.9558606147766113,0.356560617685318,1.1996911764144897,0.2565511465072632,0.8460904955863953,0.2700427174568176,0.2500198185443878,-0.6380097270011902,0.3673098683357239,0.820123553276062,-1.3677232265472412,1.2095301151275635,0.37441033124923706,-1.997959852218628,-1.3420217037200928,1.0234309434890747,-0.3355730175971985,0.2943021059036255,0.027381492778658867,-0.8497952818870544,0.32614266872406006,-1.4738891124725342,0.09101583808660507,2.167158603668213,-0.2655092477798462,-2.0261857509613037,2.22440242767334,-0.7503128051757812,1.4935935735702515,-2.2265498638153076,-1.778425931930542,2.004619598388672,1.3406864404678345,-0.07217563688755035,-0.24293485283851624,0.9776841998100281,0.3935333490371704,0.7860226035118103,0.06406087428331375,-1.588667392730713,0.8242600560188293,-3.218668222427368,0.8478555083274841,1.522589087486267,0.4183460772037506,1.6074116230010986,-1.2746973037719727,1.0427943468093872,-2.433978319168091,-0.683131217956543,-0.33782243728637695,-0.05616166070103645,-0.32240986824035645,1.2426153421401978,-0.06350678950548172,0.5599142909049988,-0.40524822473526,1.3133633136749268,-0.9915693402290344,0.4380514621734619,-0.02453392557799816,0.8223926424980164,-1.0994068384170532,-1.503301739692688,-1.932746410369873,0.9762764573097229,0.8720830678939819,0.3114258050918579,-0.6789358854293823,0.5441926717758179,0.6361517310142517,-1.878591537475586,0.9868341684341431,0.35227254033088684,0.4614606201648712,0.16338057816028595,0.13689495623111725],"fitness":732.952,"generation":76,"checkpoints":660,"laps":3,"trackSeed":null,"savedAt":"2026-11-24T09:00:51.809Z","training":{"generations":100,"population":160,"seed":42,"track":"random","firstLapGeneration":4,"validationScore":0.95,"unseenTracksCompleted":"17/20"}};
+</script>
+  <script>
+/**
+ * UI wiring: main loop, controls, keyboard shortcuts, save / load.
+ */
+(function () {
+  const NE = window.NE;
+  const $ = (id) => document.getElementById(id);
+
+  const ui = {
+    world: $('world'), net: $('net'), chart: $('chart'), badge: $('badge'), meta: $('meta'),
+    genTitle: $('genTitle'), stAlive: $('stAlive'), stLeader: $('stLeader'), stBest: $('stBest'),
+    stLaps: $('stLaps'), stStep: $('stStep'), stTrack: $('stTrack'),
+    btnPause: $('btnPause'), btnTurbo: $('btnTurbo'), btnTrack: $('btnTrack'), btnDemo: $('btnDemo'),
+    btnPretrained: $('btnPretrained'), btnSave: $('btnSave'), btnLoad: $('btnLoad'), fileLoad: $('fileLoad'),
+    btnReset: $('btnReset'),
+    speed: $('speed'), mutRate: $('mutRate'), mutStr: $('mutStr'), pop: $('pop'), hidden: $('hidden'),
+    seed: $('seed'), randTrack: $('randTrack'), allSensors: $('allSensors'), showDead: $('showDead'),
+    oSpeed: $('oSpeed'), oMutRate: $('oMutRate'), oMutStr: $('oMutStr'), oPop: $('oPop'), oHidden: $('oHidden'),
+  };
+
+  const state = { paused: false, turbo: false, message: null, messageUntil: 0 };
+  const renderer = new NE.Renderer(ui.world, ui.net, ui.chart);
+  let sim = null;
+
+  function createSim(trackSeed = 7) {
+    sim = new NE.Simulation({
+      seed: Number(ui.seed.value) || 0,
+      trackSeed,
+      populationSize: Number(ui.pop.value),
+      hidden: [Number(ui.hidden.value)],
+      randomizeTrack: ui.randTrack.checked,
+      ga: { mutationRate: Number(ui.mutRate.value), mutationStrength: Number(ui.mutStr.value) },
+    });
+    sim.onNewBest = () => {
+      ui.btnSave.disabled = false;
+      ui.btnDemo.disabled = false;
+    };
+    state.turbo = false;
+    ui.btnSave.disabled = true;
+    ui.btnDemo.disabled = true;
+    updateMeta();
+  }
+
+  function updateMeta() {
+    ui.meta.textContent =
+      `${sim.cfg.populationSize} cars · ${sim.carCfg.sensorAngles.length} sensors → ` +
+      `${sim.layers.join('-')} net · genetic algorithm`;
+  }
+
+  function flash(msg, ms = 2200) {
+    state.message = msg;
+    state.messageUntil = performance.now() + ms;
+  }
+
+  // ---- Main loop -----------------------------------------------------------
+  function frame() {
+    if (!state.paused) {
+      if (state.turbo && !sim.demo) {
+        const start = performance.now();
+        const gen = sim.generation;
+        while (performance.now() - start < 28) {
+          sim.step();
+          if (sim.generation !== gen) {
+            state.turbo = false;
+            break;
+          }
+        }
+      } else {
+        const n = Number(ui.speed.value);
+        for (let i = 0; i < n; i++) sim.step();
+      }
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function draw() {
+    renderer.drawWorld(sim, { showDead: ui.showDead.checked, showAllSensors: ui.allSensors.checked });
+    const leader = sim.leader();
+    renderer.drawNetwork(leader ? leader.brain : null);
+    renderer.drawChart(sim.history);
+
+    if (sim.demo) {
+      ui.genTitle.textContent = `champion (gen ${sim.best.generation})`;
+      ui.stAlive.textContent = 'replay';
+    } else {
+      ui.genTitle.textContent = `generation ${sim.generation}`;
+      ui.stAlive.textContent = `${sim.aliveCount()} / ${sim.cars.length}`;
+    }
+    ui.stLeader.textContent = leader ? `${leader.checkpoints} checkpoints · ${leader.speed.toFixed(1)} px/t` : '–';
+    ui.stBest.textContent = sim.best.genome
+      ? `${sim.best.checkpoints} checkpoints (gen ${sim.best.generation})`
+      : '–';
+    ui.stLaps.textContent = leader ? `${leader.laps}` : '0';
+    ui.stStep.textContent = `${sim.stepCount} / ${sim.demo ? sim.cfg.maxSteps * 2 : sim.cfg.maxSteps}`;
+    ui.stTrack.textContent = `#${sim.track.seed}${sim.cfg.randomizeTrack ? ' (random each gen)' : ''}`;
+
+    let badge = null;
+    if (state.message && performance.now() < state.messageUntil) badge = state.message;
+    else if (state.paused) badge = 'paused';
+    else if (state.turbo) badge = `fast-forwarding generation ${sim.generation}…`;
+    else if (sim.demo) badge = 'champion replay';
+    ui.badge.hidden = !badge;
+    if (badge) ui.badge.textContent = badge;
+
+    ui.btnPause.textContent = state.paused ? 'Resume' : 'Pause';
+    ui.btnTurbo.classList.toggle('active', state.turbo);
+    ui.btnDemo.classList.toggle('active', sim.demo);
+    ui.btnDemo.textContent = sim.demo ? 'Back to training' : 'Watch champion';
+    ui.btnTurbo.disabled = sim.demo;
+  }
+
+  // ---- Actions -------------------------------------------------------------
+  const actions = {
+    pause() { state.paused = !state.paused; },
+    turbo() { if (!sim.demo) { state.turbo = !state.turbo; state.paused = false; } },
+    newTrack() {
+      const seed = 1 + Math.floor(Math.random() * 1e6);
+      sim.setTrack(seed);
+      flash(`new track #${seed}`);
+    },
+    demo() {
+      if (!sim.setDemo(!sim.demo)) flash('no champion yet: let a generation finish');
+      state.turbo = false;
+    },
+    reset() {
+      createSim(sim.track.seed);
+      flash('training reset');
+    },
+    async save() {
+      const brain = sim.exportBest();
+      if (!brain) return;
+      const filename = `car-brain-gen${brain.generation}.json`;
+      const text = JSON.stringify(brain, null, 1);
+      // Inside the claude.ai artifact viewer, files are saved through its downloads capability.
+      if (window.claude && typeof window.claude.use === 'function') {
+        try {
+          const downloads = await window.claude.use('downloads');
+          if (downloads) {
+            await downloads.save({ filename, data: text });
+            return;
+          }
+        } catch (e) {
+          flash('save cancelled');
+          return;
+        }
+      }
+      const blob = new Blob([text], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+    loadObject(obj, label) {
+      try {
+        sim.loadBrain(obj);
+        ui.hidden.value = obj.layers.slice(1, -1)[0] ?? ui.hidden.value;
+        ui.oHidden.textContent = ui.hidden.value;
+        sim.setDemo(true);
+        ui.btnSave.disabled = false;
+        ui.btnDemo.disabled = false;
+        updateMeta();
+        flash(`${label} loaded: watching it drive`);
+      } catch (e) {
+        flash(`could not load: ${e.message}`, 4000);
+      }
+    },
+  };
+
+  ui.btnPause.onclick = actions.pause;
+  ui.btnTurbo.onclick = actions.turbo;
+  ui.btnTrack.onclick = actions.newTrack;
+  ui.btnDemo.onclick = actions.demo;
+  ui.btnReset.onclick = actions.reset;
+  ui.btnSave.onclick = actions.save;
+  ui.btnLoad.onclick = () => ui.fileLoad.click();
+  ui.fileLoad.onchange = () => {
+    const f = ui.fileLoad.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { actions.loadObject(JSON.parse(reader.result), f.name); }
+      catch (e) { flash('that file is not valid JSON', 4000); }
+    };
+    reader.readAsText(f);
+    ui.fileLoad.value = '';
+  };
+  if (window.NE_PRETRAINED) {
+    ui.btnPretrained.onclick = () => actions.loadObject(window.NE_PRETRAINED, 'pretrained champion');
+  } else {
+    ui.btnPretrained.disabled = true;
+    ui.btnPretrained.title = 'Run `npm run train` to create models/champion.js';
+  }
+
+  // Live hyperparameters
+  const bindOut = (input, out, fmt) => {
+    const f = () => { out.textContent = fmt(input.value); };
+    input.addEventListener('input', f);
+    f();
+  };
+  bindOut(ui.speed, ui.oSpeed, (v) => `${v}×`);
+  bindOut(ui.mutRate, ui.oMutRate, (v) => Number(v).toFixed(2));
+  bindOut(ui.mutStr, ui.oMutStr, (v) => Number(v).toFixed(2));
+  bindOut(ui.pop, ui.oPop, (v) => v);
+  bindOut(ui.hidden, ui.oHidden, (v) => v);
+  ui.mutRate.addEventListener('input', () => { sim.ga.cfg.mutationRate = Number(ui.mutRate.value); });
+  ui.mutStr.addEventListener('input', () => { sim.ga.cfg.mutationStrength = Number(ui.mutStr.value); });
+  ui.randTrack.addEventListener('change', () => { sim.cfg.randomizeTrack = ui.randTrack.checked; });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' && e.target.type === 'number') return;
+    const k = e.key.toLowerCase();
+    if (k === ' ') { e.preventDefault(); actions.pause(); }
+    else if (k === 't') actions.turbo();
+    else if (k === 'n') actions.newTrack();
+    else if (k === 'c') actions.demo();
+    else if (k === 'r') actions.reset();
+  });
+
+  createSim(7);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

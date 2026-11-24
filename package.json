@@ -1,0 +1,16 @@
+{
+  "name": "neuroevolution-cars",
+  "version": "1.0.0",
+  "description": "Self-driving cars that teach themselves to race using a neural network trained by a genetic algorithm, written from scratch in JavaScript.",
+  "main": "src/sim.js",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -o .",
+    "train": "node scripts/train.js --generations 100 --randomize --val-tracks 20 --test-tracks 20",
+    "train:quick": "node scripts/train.js --generations 30",
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/build.js"
+  },
+  "keywords": ["neuroevolution", "genetic-algorithm", "neural-network", "machine-learning", "self-driving", "simulation", "canvas"],
+  "license": "MIT",
+  "engines": { "node": ">=18" }
+}
